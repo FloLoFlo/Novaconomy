@@ -274,5 +274,7 @@ permissions:
       novaconomy.user: true
 
   
-  
-    
+
+
+  loadbefore:
+    - name: Ultracosmetics
