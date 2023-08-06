@@ -17,13 +17,13 @@ dependencies {
     // Soft Dependencies
     compileOnly("me.clip:placeholderapi:2.11.3")
     compileOnly("com.github.MilkBowl:VaultAPI:1.7.1")
-<<<<<<< HEAD
+//<<<<<<< HEAD
     compileOnly("com.github.lokka30.treasury:treasury-api:1.2.1")
     //compileOnly("com.github.EssentialsX.Essentials:EssentialsX:2.20.0")
-=======
+//=======
     compileOnly("com.github.lokka30.treasury:treasury-api:2.0.0")
     compileOnly("net.essentialsx:EssentialsX:2.20.0")
->>>>>>> 443e6c1809e91df92309e54fa67e8267c98b1210
+//>>>>>>> 443e6c1809e91df92309e54fa67e8267c98b1210
 
     // API
 
