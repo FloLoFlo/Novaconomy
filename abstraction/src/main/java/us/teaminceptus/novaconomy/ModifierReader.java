@@ -11,9 +11,17 @@ import java.util.*;
 import java.util.Map.Entry;
 import java.util.stream.Collectors;
 
-public class ModifierReader {
+import static us.teaminceptus.novaconomy.messages.MessageHandler.format;
+
+public final class ModifierReader {
+
+    private ModifierReader() {}
+
+    public static final Map<String, Map<String, Set<Entry<Economy, Double>>>> LOADED_MODIFIERS = new HashMap<>();
 
     public static Map<String, Map<String, Set<Entry<Economy, Double>>>> getAllModifiers() throws IllegalArgumentException {
+        if (!LOADED_MODIFIERS.isEmpty()) return LOADED_MODIFIERS;
+
         Map<String, Map<String, Set<Entry<Economy, Double>>>> mods = new HashMap<>();
         FileConfiguration config = NovaConfig.getPlugin().getConfig();
 
@@ -50,7 +58,8 @@ public class ModifierReader {
             });
         }
 
-        return mods;
+        LOADED_MODIFIERS.putAll(mods);
+        return LOADED_MODIFIERS;
     }
 
     public static Map<String, Set<Entry<Economy, Double>>> getModifier(String mod) {
@@ -58,7 +67,7 @@ public class ModifierReader {
     }
 
     public static Map<EntityDamageEvent.DamageCause, Double> getDeathModifiers() {
-        Map<EntityDamageEvent.DamageCause, Double> mods = new HashMap<>();
+        Map<EntityDamageEvent.DamageCause, Double> mods = new EnumMap<>(EntityDamageEvent.DamageCause.class);
 
         FileConfiguration config = NovaConfig.getConfig();
 
@@ -66,7 +75,7 @@ public class ModifierReader {
             ConfigurationSection modifiers = config.getConfigurationSection("NaturalCauses.Modifiers.Death");
 
             modifiers.getValues(false).forEach((k, v) -> {
-                EntityDamageEvent.DamageCause cause = null;
+                EntityDamageEvent.DamageCause cause;
                 try {
                     cause = EntityDamageEvent.DamageCause.valueOf(k.toUpperCase());
                 } catch (IllegalArgumentException e) {
@@ -74,7 +83,7 @@ public class ModifierReader {
                     return;
                 }
 
-                double d = 0;
+                double d;
                 try {
                     d = Double.parseDouble(v.toString());
                     if (d == 0) {
@@ -101,7 +110,7 @@ public class ModifierReader {
             if (!Economy.exists(s1) && !Economy.exists(s2)) return null;
 
             String remove = Economy.exists(s1) ? s1 + "" : s2 + "";
-            Economy econ = Economy.exists(s1) ? Economy.getEconomy(s1) : Economy.getEconomy(s2);
+            Economy econ = Economy.exists(s1) ? Economy.bySymbol(s1) : Economy.bySymbol(s2);
             double amountD = Double.parseDouble(s.replaceAll("[" + remove + "]", ""));
             return new AbstractMap.SimpleEntry<>(econ, amountD);
         } catch (NumberFormatException e) {
@@ -111,12 +120,12 @@ public class ModifierReader {
 
     public static String toModString(Entry<Economy, Double> entry) {
         if (entry == null) return null;
-        return NovaUtil.format("%,.0f", entry.getValue()) + entry.getKey().getSymbol();
+        return format("%,.0f", entry.getValue()) + entry.getKey().getSymbol();
     }
 
     public static List<String> toModList(List<Entry<Economy, Double>> list) {
-        if (list == null) return null;
-        if (list.isEmpty()) return null;
+        if (list == null) return Collections.emptyList();
+        if (list.isEmpty()) return Collections.emptyList();
         return list.stream()
             .filter(Objects::nonNull)
             .map(ModifierReader::toModString).collect(Collectors.toList());

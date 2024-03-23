@@ -1,6 +1,7 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 plugins {
+    kotlin("jvm") version "1.9.22"
     id("org.sonarqube") version "4.0.0.2929"
     id("com.github.johnrengelman.shadow") version "8.1.1" apply false
 
@@ -11,7 +12,7 @@ plugins {
 }
 
 val pGroup = "us.teaminceptus.novaconomy"
-val pVersion = "1.8.0-SNAPSHOT"
+val pVersion = "1.9.2-SNAPSHOT"
 val pAuthor = "Team-Inceptus"
 
 sonarqube {
@@ -96,14 +97,16 @@ subprojects {
     apply<JacocoPlugin>()
     apply(plugin = "org.sonarqube")
     apply(plugin = "com.github.johnrengelman.shadow")
+    apply(plugin = "org.jetbrains.kotlin.jvm")
 
     dependencies {
-        compileOnly("org.jetbrains:annotations:24.0.1")
+        compileOnly(kotlin("stdlib"))
+        compileOnly("org.jetbrains:annotations:24.1.0")
 
         testImplementation("org.spigotmc:spigot-api:1.8-R0.1-SNAPSHOT")
-        testImplementation("net.md-5:bungeecord-chat:1.16-R0.4")
-        testImplementation("org.mockito:mockito-core:5.4.0")
-        testImplementation("org.junit.jupiter:junit-jupiter:5.9.3")
+        testImplementation("net.md-5:bungeecord-chat:1.20-R0.2")
+        testImplementation("org.mockito:mockito-core:5.10.0")
+        testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
     }
 
     java {
@@ -112,10 +115,21 @@ subprojects {
     }
 
     tasks {
+        assemble {
+            dependsOn(compileKotlin)
+        }
+
         compileJava {
             options.encoding = "UTF-8"
             options.isWarnings = false
             options.compilerArgs.addAll(listOf("-Xlint:all", "-Xlint:-processing"))
+        }
+
+        compileKotlin {
+            kotlinOptions {
+                jvmTarget = jvmVersion.toString()
+                freeCompilerArgs = listOf("-Xjvm-default=all")
+            }
         }
 
         jacocoTestReport {
@@ -158,7 +172,6 @@ subprojects {
                     "Implementation-Vendor" to pAuthor
                 )
             }
-            exclude("META-INF", "META-INF/**")
 
             relocate("revxrsal.commands", "us.teaminceptus.novaconomy.shaded.lamp")
             relocate("org.bstats", "us.teaminceptus.novaconomy.shaded.bstats")

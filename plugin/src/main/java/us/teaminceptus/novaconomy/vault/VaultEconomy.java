@@ -2,6 +2,7 @@ package us.teaminceptus.novaconomy.vault;
 
 import net.milkbowl.vault.economy.AbstractEconomy;
 import net.milkbowl.vault.economy.EconomyResponse;
+import org.bukkit.OfflinePlayer;
 import us.teaminceptus.novaconomy.api.bank.Bank;
 import us.teaminceptus.novaconomy.api.economy.Economy;
 import us.teaminceptus.novaconomy.api.player.NovaPlayer;
@@ -9,9 +10,8 @@ import us.teaminceptus.novaconomy.api.player.NovaPlayer;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static us.teaminceptus.novaconomy.Novaconomy.getPlayer;
+import static us.teaminceptus.novaconomy.util.NovaUtil.getPlayer;
 
-@SuppressWarnings("deprecation")
 class VaultEconomy extends AbstractEconomy {
 
     public static final EconomyResponse NO_BANKS = new EconomyResponse(0, 0, EconomyResponse.ResponseType.NOT_IMPLEMENTED, "Vault Banks are not apart of Novaconomy");
@@ -81,7 +81,10 @@ class VaultEconomy extends AbstractEconomy {
 
     @Override
     public double getBalance(String playerName) {
-        return new NovaPlayer(getPlayer(playerName)).getBalance(econ);
+        OfflinePlayer p = getPlayer(playerName);
+        if (p == null) return 0;
+
+        return new NovaPlayer(p).getBalance(econ);
     }
 
     @Override
@@ -101,7 +104,10 @@ class VaultEconomy extends AbstractEconomy {
 
     @Override
     public EconomyResponse withdrawPlayer(String playerName, double amount) {
-        NovaPlayer np = new NovaPlayer(getPlayer(playerName));
+        OfflinePlayer p = getPlayer(playerName);
+        if (p == null) return new VaultEconomyResponse(amount, 0);
+
+        NovaPlayer np = new NovaPlayer(p);
         np.remove(econ, amount);
         return new VaultEconomyResponse(amount, np.getBalance(econ));
     }
@@ -113,7 +119,10 @@ class VaultEconomy extends AbstractEconomy {
 
     @Override
     public EconomyResponse depositPlayer(String playerName, double amount) {
-        NovaPlayer np = new NovaPlayer(getPlayer(playerName));
+        OfflinePlayer p = getPlayer(playerName);
+        if (p == null) return new VaultEconomyResponse(amount, 0);
+
+        NovaPlayer np = new NovaPlayer(p);
         np.add(econ, amount);
         return new VaultEconomyResponse(amount, np.getBalance(econ));
     }
@@ -135,27 +144,27 @@ class VaultEconomy extends AbstractEconomy {
 
     @Override
     public EconomyResponse bankBalance(String name) {
-        return new VaultEconomyResponse(0, Bank.getBalance(Economy.getEconomy(name)));
+        return new VaultEconomyResponse(0, Bank.getBalance(Economy.byName(name)));
     }
 
     @Override
     public EconomyResponse bankHas(String name, double amount) {
-        boolean has = Bank.getBalance(Economy.getEconomy(name)) == amount;
-        return new EconomyResponse(0, Bank.getBalance(Economy.getEconomy(name)), has ? EconomyResponse.ResponseType.SUCCESS : EconomyResponse.ResponseType.FAILURE, null);
+        boolean has = Bank.getBalance(Economy.byName(name)) == amount;
+        return new EconomyResponse(0, Bank.getBalance(Economy.byName(name)), has ? EconomyResponse.ResponseType.SUCCESS : EconomyResponse.ResponseType.FAILURE, null);
     }
 
     @Override
     public EconomyResponse bankWithdraw(String name, double amount) {
-        Economy econ = Economy.getEconomy(name);
+        Economy econ = Economy.byName(name);
         Bank.removeBalance(econ, amount);
-        return new VaultEconomyResponse(0, Bank.getBalance(Economy.getEconomy(name)));
+        return new VaultEconomyResponse(0, Bank.getBalance(Economy.byName(name)));
     }
 
     @Override
     public EconomyResponse bankDeposit(String name, double amount) {
-        Economy econ = Economy.getEconomy(name);
+        Economy econ = Economy.byName(name);
         Bank.addBalance(econ, amount);
-        return new VaultEconomyResponse(0, Bank.getBalance(Economy.getEconomy(name)));
+        return new VaultEconomyResponse(0, Bank.getBalance(Economy.byName(name)));
     }
 
     @Override

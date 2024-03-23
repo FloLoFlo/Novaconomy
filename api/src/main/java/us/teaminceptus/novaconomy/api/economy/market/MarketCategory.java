@@ -42,20 +42,20 @@ public enum MarketCategory {
     /**
      * Consists of common ores, ingots, and nuggets
      */
-    ORES(COAL, IRON_INGOT, GOLD_NUGGET, GOLD_INGOT, REDSTONE, DIAMOND, EMERALD, QUARTZ,
+    ORES(COAL, IRON_INGOT, GOLD_NUGGET, GOLD_INGOT, Material.REDSTONE, DIAMOND, EMERALD, QUARTZ,
             "copper_ingot", "lapis_lazuli", "iron_nugget", "netherite_scrap", "netherite_ingot"
     ),
 
     /**
      * Consists of common outdoor decoration items and food
      */
-    DECORATIONS_FOOD(GRASS, DEAD_BUSH, VINE, SUGAR_CANE, PUMPKIN, TORCH, GLASS, CARROT,
+    DECORATIONS_FOOD(DEAD_BUSH, VINE, SUGAR_CANE, PUMPKIN, TORCH, GLASS, CARROT,
             POTATO, APPLE, BREAD, WHEAT, CACTUS, ICE, SNOW, PACKED_ICE, PRISMARINE, SEA_LANTERN,
             "tall_grass", "fern", "lily_pad", "large_fern", "lantern", "glass_pane", "glow_berries",
             "glow_lichen", "raw_beef:beef", "porkchop", "chicken:raw_chicken", "mutton", "campfire",
             "kelp", "peony", "sunflower", "poppy", "sea_pickle", "candle", "dark_prismarine", "shroomlight",
             "mycelium", "podzol", "dripleaf", "small_dripleaf", "soul_lantern", "sweet_berries", "soul_campfire",
-            "seeds:wheat_seeds", "torchflower", "bamboo_block", "pink_petals"
+            "seeds:wheat_seeds", "torchflower", "bamboo_block", "pink_petals", "grass:short_grass"
     ),
 
     /**
@@ -74,6 +74,21 @@ public enum MarketCategory {
             PRISMARINE_CRYSTALS, SPONGE,
             "ender_eye:eye_of_ender", "end_crystal", "ink_sac:ink_sack", "gunpowder",
             "goat_horn", "nautilus_shell", "scute"
+    ),
+
+    /**
+     * Consists of common redstone blocks and items
+     */
+    REDSTONE(Material.REDSTONE, REDSTONE_BLOCK, LEVER, STONE_BUTTON, DAYLIGHT_DETECTOR, TRIPWIRE_HOOK, STRING,
+            DETECTOR_RAIL, ACTIVATOR_RAIL, POWERED_RAIL, DISPENSER, DROPPER, HOPPER, NOTE_BLOCK, IRON_DOOR, IRON_TRAPDOOR,
+            "repeater", "comparator:redstone_comparator", "redstone_torch:redstone_torch_on", "redstone_lamp:redstone_lamp_off",
+            "target", "rail:rails", "observer", "oak_trapdoor", "spruce_trapdoor", "birch_trapdoor", "jungle_trapdoor",
+            "acacia_trapdoor", "dark_oak_trapdoor", "warped_trapdoor", "crimson_trapdoor", "cherry_trapdoor",
+            "oak_button", "spruce_button", "birch_button", "jungle_button", "acacia_button", "dark_oak_button",
+            "warped_button", "crimson_button", "cherry_button", "wooden_pressure_plate:oak_pressure_plate", "spruce_pressure_plate",
+            "birch_pressure_plate", "jungle_pressure_plate", "acacia_pressure_plate", "dark_oak_pressure_plate",
+            "warped_pressure_plate", "crimson_pressure_plate", "cherry_pressure_plate", "stone_plate:stone_pressure_plate",
+            "heavy_weighted_pressure_plate", "light_weighted_pressure_plate", "piston", "sticky_piston"
     ),
 
     /**

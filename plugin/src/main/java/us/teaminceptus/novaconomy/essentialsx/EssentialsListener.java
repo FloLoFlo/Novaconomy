@@ -13,9 +13,8 @@ import us.teaminceptus.novaconomy.api.NovaConfig;
 import us.teaminceptus.novaconomy.api.economy.Economy;
 import us.teaminceptus.novaconomy.api.player.NovaPlayer;
 
-import static us.teaminceptus.novaconomy.abstraction.Wrapper.getMessage;
+import static us.teaminceptus.novaconomy.messages.MessageHandler.*;
 
-@SuppressWarnings("deprecation")
 public final class EssentialsListener implements Listener {
 
     // private final Novaconomy plugin;
@@ -29,7 +28,7 @@ public final class EssentialsListener implements Listener {
     public void onNickChange(NickChangeEvent e) {
         if (!NovaConfig.getFunctionalityConfig().getBoolean("Essentials.NickCost.Enabled", false)) return;
     
-        Economy econ = Economy.getEconomy(NovaConfig.getFunctionalityConfig().getString("Essentials.NickCost.Economy", ""));
+        Economy econ = Economy.byName(NovaConfig.getFunctionalityConfig().getString("Essentials.NickCost.Economy", ""));
         if (econ == null) return;
 
         double amount = NovaConfig.getFunctionalityConfig().getDouble("Essentials.NickCost.Amount", 0.0);
@@ -38,20 +37,20 @@ public final class EssentialsListener implements Listener {
         Player p = e.getAffected().getBase();
         NovaPlayer np = new NovaPlayer(p);
 
-        if (np.getBalance(econ) < amount) {
+        if (!np.canAfford(econ, amount, true)) {
             e.setCancelled(true);
-            p.sendMessage(getMessage("error.economy.invalid_amount.essentials.nick"));
+            messages.sendMessage(p, "error.economy.invalid_amount.essentials.nick");
             return;
         }
 
-        np.withdraw(econ, amount);
+        np.remove(econ, amount);
     }
 
     @EventHandler
     public void onWarp(UserWarpEvent e) {
         if (!NovaConfig.getFunctionalityConfig().getBoolean("Essentials.WarpCost.Enabled", false)) return;
     
-        Economy econ = Economy.getEconomy(NovaConfig.getFunctionalityConfig().getString("Essentials.WarpCost.Economy", ""));
+        Economy econ = Economy.byName(NovaConfig.getFunctionalityConfig().getString("Essentials.WarpCost.Economy", ""));
         if (econ == null) return;
 
         double amount = NovaConfig.getFunctionalityConfig().getDouble("Essentials.WarpCost.Amount", 0.0);
@@ -60,20 +59,20 @@ public final class EssentialsListener implements Listener {
         Player p = e.getUser().getBase();
         NovaPlayer np = new NovaPlayer(p);
 
-        if (np.getBalance(econ) < amount) {
+        if (!np.canAfford(econ, amount, true)) {
             e.setCancelled(true);
-            p.sendMessage(getMessage("error.economy.invalid_amount.essentials.warp"));
+            messages.sendMessage(p, "error.economy.invalid_amount.essentials.warp");
             return;
         }
 
-        np.withdraw(econ, amount);
+        np.remove(econ, amount);
     }
 
     @EventHandler
     public void onTeleport(TeleportWarmupEvent e) {
         if (!NovaConfig.getFunctionalityConfig().getBoolean("Essentials.TeleportCost.Enabled", false)) return;
     
-        Economy econ = Economy.getEconomy(NovaConfig.getFunctionalityConfig().getString("Essentials.TeleportCost.Economy", ""));
+        Economy econ = Economy.byName(NovaConfig.getFunctionalityConfig().getString("Essentials.TeleportCost.Economy", ""));
         if (econ == null) return;
 
         double amount = NovaConfig.getFunctionalityConfig().getDouble("Essentials.TeleportCost.Amount", 0.0);
@@ -82,13 +81,13 @@ public final class EssentialsListener implements Listener {
         Player p = e.getTeleportee().getBase();
         NovaPlayer np = new NovaPlayer(p);
 
-        if (np.getBalance(econ) < amount) {
+        if (!np.canAfford(econ, amount, true)) {
             e.setCancelled(true);
-            p.sendMessage(getMessage("error.economy.invalid_amount.essentials.teleport"));
+            messages.sendMessage(p, "error.economy.invalid_amount.essentials.teleport");
             return;
         }
 
-        np.withdraw(econ, amount);
+        np.remove(econ, amount);
     }
 
 

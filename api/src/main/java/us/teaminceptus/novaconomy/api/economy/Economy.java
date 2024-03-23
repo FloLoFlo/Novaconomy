@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -55,14 +56,11 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
     private ItemStack icon;
     private boolean hasNaturalIncrease;
     private double conversionScale;
-
     private final UUID uid;
-
     private boolean interestEnabled;
-
     private int customModelData;
-
     private boolean clickableReward;
+    private boolean isConvertable;
 
     private Economy(UUID id, String name, ItemStack icon, char symbol, boolean naturalIncrease, double conversionScale, boolean clickable) {
         this.symbol = symbol;
@@ -244,7 +242,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * @param name Name of the Economy
      * @see Economy#removeEconomy(Economy)
      */
-    public static void removeEconomy(@NotNull String name) { removeEconomy(getEconomy(name)); }
+    public static void removeEconomy(@NotNull String name) { removeEconomy(byName(name)); }
 
     /**
      * Remove an Economy from the Plugin
@@ -253,6 +251,9 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      */
     public static void removeEconomy(@Nullable Economy econ) throws IllegalArgumentException {
         if (econ == null) throw new IllegalArgumentException("Economy cannot be null");
+
+        ECONOMY_CACHE.clear();
+
         for (OfflinePlayer p : Bukkit.getOfflinePlayers()) {
             NovaPlayer np = new NovaPlayer(p);
             Map<String, Object> data = np.getPlayerData();
@@ -262,7 +263,21 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
                     .forEach(data::remove);
         }
 
-        econ.file.delete();
+        if (NovaConfig.getConfiguration().isDatabaseEnabled()) {
+            Connection db = NovaConfig.getConfiguration().getDatabaseConnection();
+
+            try {
+                PreparedStatement ps = db.prepareStatement("DELETE FROM economies WHERE id = ?");
+                ps.setString(1, econ.getUniqueId().toString());
+                ps.executeUpdate();
+                ps.close();
+            } catch (SQLException e) {
+                NovaConfig.print(e);
+            }
+        } else {
+            econ.file.delete();
+        }
+
         NovaConfig.getConfiguration().reloadHooks();
     }
 
@@ -273,7 +288,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * @throws IllegalArgumentException if name is null
      */
     @Nullable
-    public static Economy getEconomy(@NotNull String name) throws IllegalArgumentException {
+    public static Economy byName(@NotNull String name) throws IllegalArgumentException {
         if (name == null) throw new IllegalArgumentException("Name cannot be null");
 
         return Economy.getEconomies().stream()
@@ -289,7 +304,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      */
     public static boolean exists(@Nullable String name) {
         if (name == null) return false;
-        return getEconomy(name) != null;
+        return byName(name) != null;
     }
 
     /**
@@ -299,7 +314,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      */
     public static boolean exists(@Nullable UUID uid) {
         if (uid == null) return false;
-        return getEconomy(uid) != null;
+        return byId(uid) != null;
     }
 
     /**
@@ -308,7 +323,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * @return true if economy exists, else false`
      */
     public static boolean exists(char c) {
-        return getEconomy(c) != null;
+        return bySymbol(c) != null;
     }
 
     /**
@@ -368,7 +383,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
             for (File f : files) {
                 if (f == null) continue;
                 UUID id = UUID.fromString(f.getName().replace(".yml", ""));
-                economies.add(getEconomy(id));
+                economies.add(byId(id));
             }
         }
 
@@ -394,6 +409,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * Fetch the name of this economy
      * @return Name of this economy
      */
+    @NotNull
     public String getName() { return this.name; }
 
     /**
@@ -408,6 +424,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * Get the Icon of this Economy
      * @return Icon of this Economy
      */
+    @NotNull
     public ItemStack getIcon() {
         return this.icon;
     }
@@ -416,6 +433,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * Gets the Economy Icon's Type.
      * @return Icon Material Type
      */
+    @NotNull
     public Material getIconType() { return this.icon.getType(); }
 
     /**
@@ -423,10 +441,10 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * @param to The New Economy to convert to
      * @param fromAmount How much amount is to be converted
      * @return Converted amount in the other economy's form
-     * @throws IllegalArgumentException if to or from is null, or economies are identical
+     * @throws IllegalArgumentException if to or from is null, economies are identical, or either are not convertable
      * @see Economy#convertAmount(Economy, Economy, double)
      */
-    public double convertAmount(Economy to, double fromAmount) throws IllegalArgumentException {
+    public double convertAmount(@NotNull Economy to, double fromAmount) throws IllegalArgumentException {
         return convertAmount(this, to, fromAmount);
     }
 
@@ -439,18 +457,23 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
         return this.uid;
     }
 
+
+
     /**
      * Convert one economy's balance to another
      * @param from The Economy to convert from
      * @param to The Economy to convert to
      * @param fromAmount How much amount is to be converted
      * @return Converted amount in the other economy's form
-     * @throws IllegalArgumentException if to or from is null, or economies are identical
+     * @throws IllegalArgumentException if to or from is null, economies are identical, or either is not convertable
      */
-    public static double convertAmount(Economy from, Economy to, double fromAmount) throws IllegalArgumentException {
+    public static double convertAmount(@NotNull Economy from, @NotNull Economy to, double fromAmount) throws IllegalArgumentException {
         if (from == null) throw new IllegalArgumentException("Economy from is null");
         if (to == null) throw new IllegalArgumentException("Economy to is null");
-        if (from.getName().equals(to.getName())) throw new IllegalArgumentException("Economies are identical");
+        if (from == to) throw new IllegalArgumentException("Economies are identical");
+        if (!from.isConvertable) throw new IllegalArgumentException("Economy from is not convertable");
+        if (!to.isConvertable) throw new IllegalArgumentException("Economy to is not convertable");
+
         double scale = from.getConversionScale() / to.getConversionScale();
 
         return fromAmount * scale;
@@ -462,7 +485,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
      * @return Economy found, or null if not found or if UUID is null
      */
     @Nullable
-    public static Economy getEconomy(@Nullable UUID uid) {
+    public static Economy byId(@Nullable UUID uid) {
         if (uid == null) return null;
 
         Economy econ = null;
@@ -502,14 +525,46 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
     }
 
     /**
+     * Fetches whether an Economy can be converted to another Economy.
+     * @return true if convertable, else false
+     */
+    public boolean isConvertable() {
+        return isConvertable;
+    }
+
+    /**
+     * Sets whether an Economy can be converted to another Economy.
+     * @param convertable true if convertable, else false
+     */
+    public void setConvertable(boolean convertable) {
+        this.isConvertable = convertable;
+        saveEconomy();
+    }
+
+    /**
      * Fetches an Economy by its unique symbol.
      * @param symbol Symbol to find
      * @return Economy found, or null if not found
      */
     @Nullable
-    public static Economy getEconomy(char symbol) {
+    public static Economy bySymbol(char symbol) {
         for (Economy econ : Economy.getEconomies()) if (econ.getSymbol() == symbol) return econ;
         return null;
+    }
+
+    /**
+     * Gets the first Economy in the list of Economies.
+     * @return First Economy
+     * @throws IllegalStateException if no economies are registered
+     */
+    public static Economy first() throws IllegalStateException {
+        if (getEconomies().isEmpty()) throw new IllegalStateException("No Economies are registered");
+
+        return getEconomies()
+                .stream()
+                .sorted(Economy::compareTo)
+                .collect(Collectors.toList())
+                .get(0);
     }
 
     /**
@@ -568,8 +623,19 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
                 "interest BOOL NOT NULL," +
                 "custom_model_data INT NOT NULL," +
                 "clickable_reward BOOL NOT NULL," +
+                "convertable BOOL NOT NULL DEFAULT TRUE," +
                 "PRIMARY KEY (id))"
         );
+
+        DatabaseMetaData md = db.getMetaData();
+        ResultSet rs = null;
+
+        try {
+            if (!(rs = md.getColumns(null, null, "economies", "convertable")).next())
+                db.createStatement().execute("ALTER TABLE economies ADD convertable BOOL NOT NULL DEFAULT TRUE");
+        } finally {
+            if (rs != null) rs.close();
+        }
     }
 
     /**
@@ -613,10 +679,11 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
                         "conversion_scale = ?, " +
                         "interest = ?, " +
                         "custom_model_data = ?, " +
-                        "clickable_reward = ? " +
+                        "clickable_reward = ?, " +
+                        "convertable = ? " +
                         "WHERE id = \"" + this.uid + "\"";
             else
-                sql = "INSERT INTO economies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                sql = "INSERT INTO economies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
         }
 
         PreparedStatement ps = db.prepareStatement(sql);
@@ -637,6 +704,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
         ps.setBoolean(7, this.interestEnabled);
         ps.setInt(8, this.customModelData);
         ps.setBoolean(9, this.clickableReward);
+        ps.setBoolean(10, this.isConvertable);
 
         ps.executeUpdate();
         ps.close();
@@ -657,10 +725,12 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
         boolean interestEnabled = rs.getBoolean("interest");
         int customModelData = rs.getInt("custom_model_data");
         boolean clickableReward = rs.getBoolean("clickable_reward");
+        boolean isConvertable = rs.getBoolean("convertable");
 
         Economy en = new Economy(uid, name, icon, symbol, hasNaturalIncrease,  conversionScale, clickableReward);
         en.interestEnabled = interestEnabled;
         en.customModelData = customModelData;
+        en.isConvertable = isConvertable;
 
         return en;
     }
@@ -682,6 +752,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
         serial.put("interest", this.interestEnabled);
         serial.put("custom-model-data", this.customModelData);
         serial.put("clickable", this.clickableReward);
+        serial.put("convertable", this.isConvertable);
         return serial;
     }
 
@@ -712,6 +783,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
 
         econ.interestEnabled = (boolean) serial.getOrDefault("interest", true);
         econ.customModelData = (int) serial.getOrDefault("custom-model-data", 0);
+        econ.isConvertable = (boolean) serial.getOrDefault("convertable", true);
 
         return econ;
     }
@@ -858,6 +930,7 @@ public final class Economy implements ConfigurationSerializable, Comparable<Econ
 
             Economy econ = new Economy(id, this.name, this.icon, this.symbol, this.increaseNaturally, this.conversionScale, this.clickableReward);
             econ.customModelData = customModelData;
+            econ.isConvertable = true;
 
             econ.saveEconomy();
 

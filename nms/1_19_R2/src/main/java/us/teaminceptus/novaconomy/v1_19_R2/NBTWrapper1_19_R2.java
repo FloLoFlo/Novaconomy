@@ -6,7 +6,7 @@ import org.bukkit.inventory.ItemStack;
 import us.teaminceptus.novaconomy.abstraction.NBTWrapper;
 import us.teaminceptus.novaconomy.api.business.Business;
 import us.teaminceptus.novaconomy.api.economy.Economy;
-import us.teaminceptus.novaconomy.api.util.BusinessProduct;
+import us.teaminceptus.novaconomy.api.business.BusinessProduct;
 import us.teaminceptus.novaconomy.api.util.Product;
 
 import java.util.UUID;
@@ -17,6 +17,12 @@ final class NBTWrapper1_19_R2 extends NBTWrapper {
     
     public NBTWrapper1_19_R2(ItemStack item) {
         super(item);
+    }
+
+    @Override
+    public String getFullTag() {
+        net.minecraft.world.item.ItemStack nmsitem = CraftItemStack.asNMSCopy(item);
+        return nmsitem.getOrCreateTag().toString();
     }
 
     @Override
@@ -135,7 +141,7 @@ final class NBTWrapper1_19_R2 extends NBTWrapper {
         if (productT.isEmpty()) return null;
 
         double amount = productT.getDouble("amount");
-        Economy econ = Economy.getEconomy(productT.getUUID("economy"));
+        Economy econ = Economy.byId(productT.getUUID("economy"));
         ItemStack item = CraftItemStack.asBukkitCopy(net.minecraft.world.item.ItemStack.of(productT.getCompound("item")));
 
         Product p = new Product(item, econ, amount);
@@ -165,6 +171,7 @@ final class NBTWrapper1_19_R2 extends NBTWrapper {
         novaconomy.put(key, productT);
         tag.put(ROOT, novaconomy);
         nmsitem.setTag(tag);
+        item = CraftItemStack.asBukkitCopy(nmsitem);
     }
 
 }

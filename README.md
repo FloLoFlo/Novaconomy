@@ -1,11 +1,75 @@
 # <img src="https://cdn.discordapp.com/attachments/894254760075603980/984954715555123281/novaconomy.png" style="height: 10%; width: 10%;"> Novaconomy
-> Customizable Economies with own symbols, names, icons and more.
+> The economy plugin as big as a star.
 
 ## 💸 **Break Free from Single-Currencies.**
-Novaconomy gives you the freedom to create **multiple** economies of your own choice, just like in real life!
-With the freedom to have your own symbols, icons, conversion rates, and even interest, you'll have all you need to have a proper Economy!
+Novaconomy is an economy plugin with so many features, you'll never need another economy plugin again. Create your own currencies, businesses, corporations, as well as thousands of other things, and manage them all with our advanced and efficient mechanics.
+
+---
+
+## 🔮 Features
+
+**Thousands of Forms of Content**
+
+- *Fully Customizable* Multiple Economy Creation
+  - Custom Model Icons, Names, Symbols, Interest, Natural Causes, Conversionable, and more! 
+  - *Optional* support for Negative Balances!
+- *Fully Customizable* Item Market
+- *Fully Customizable* Player Businesses & Corporations
+  - Player-created Business Products, Ratings, Homes, Statistics & More!
+  - Player-created Corporations for managing Businesses' permissions, profits, achievements, and more!
+- Global Bank
+- Player-owned Bounties
+- Custom Taxing Events
+- *Fully Customizable* Auction House
+  - BIN & Bidding Auctions 
+- Per-player and Global Settings
+- Advanced & Efficient GUI Mechanics
+- Customizable Message Handler & Component Support
+- Verbose Configurations
+- **PlaceholderAPI**, **Vault**, **Treasury**, **Essentials**, and more support/integration!
+- Manually Translated in over 10 Languages
+
+---
 
 <h2 style="text-decoration: underline;">📓Changelog</h2>
+
+### 🛖 1.9.0 Update: Awesome Auctions
+- New Features
+  - **Auction House**
+    - List unlimited items for sale on the Auction House
+    - Fully usable GUI for Auction House
+    - Auction API & Events
+  - **API Overhauls**
+    - Economy API methods now use specific names
+    - Move BusinessProduct to Business Package
+  - Official Kotlin Extensions
+  - **Add 1.20.3 Support**
+  - Draft API for Corporation Ranks (fully implemented in v1.9.1)
+  - More Business Supply Options
+  - Increase Maximum Business Transaction History to 20
+  - Crowdin Integration
+- Other Improvements
+  - Gradle Updates 
+  - Deleted Objects are Removed in SQL Database
+  - Fix Temporary Copy Exceptions
+  - Use more efficient Maps for Serialization
+
+- **v1.9.1**
+  - **Messages Overhaul**
+    - Added support for Spigot/Paper Components
+    - Configurable Message Handlers in functionality.yml
+    - Toggleable per-player with "Advanced Text" setting
+  - **Corporation Hierarchy** 
+    - Customizable Corporation Ranks for business members
+    - Add Permissions to how to interact with their parent corporation to their ranks
+  - Update Natural Causes
+    - Add Building Natural Cause
+    - Add ModifierReader Cache for faster loading Natural Cause Modifiers 
+  - Other API & Publishing Updates
+    - Updated JavaDocs
+  - Dependency Updates
+  - Fix Essentials-related Integration Issues
+  - Fix Additional 1.20.3+ Issues
 
 ### 💸 1.8.0 Update: Ecstatic Economy
 - New Features
@@ -22,6 +86,25 @@ With the freedom to have your own symbols, icons, conversion rates, and even int
   - Update to Treasury v2
   - Change Command Aliases for Less Confusion
   - Minor Optimization Changes
+
+- **v1.8.1**
+  - Various Bug Fixes
+  - Add Convertable Economies Option
+  - More Corporation Achievements
+  - Featured Corporation Products
+  - Corporation Query Command
+  - Redstone Market Category
+- **v1.8.2**
+  - Add Bulk Change Market Stock
+  - Add Whitelisted/Blacklisted Market Economies
+  - Fix 1.20.2 Errors
+  - Update Lamp to v3.1.7
+    - Fix Command Errors 
+- **v1.8.3**
+  - Fix various SQL and SQL-Conversion related errors
+  - Fix Business Setting Serializability Errors
+  - Fix NBT Product Errors
+  - Fix Natural Increase sounds being played when not enabled
 
 ### 👔 1.7.0 Update: Cunning Corporations
 - New Features
@@ -139,15 +222,8 @@ unlimited stock and set the prices to whatever you want!
 
 -----
 ## 🔮 Future Features
-- [x] Treasury API Hook
-- [x] Bounties
-- [x] Custom Tax Events
-- [x] Player/Business Settings
-- [x] Business Advertising
-- [x] Novaconomy Market
-- [ ] Business Investing
-- [ ] Loan System
-- [ ] Auction House
+
+All Listed Features are available on our official [Trello Board](https://trello.com/b/3w4QIxpk/novaconomy).
 
 -----
 ## 💻 Novaconomy API
@@ -217,6 +293,9 @@ dependencies {
 
 -----
 ## 📷 Screenshots
+
+![Screenshot](https://media.discordapp.net/attachments/894254760075603980/1183594433678151792/2023-12-10_20.21.24.png)
+
 ![Screenshot](https://github.com/Team-Inceptus/Novaconomy/assets/54124162/710b18f9-fa24-4a1d-bdf3-f2bdafc9a124)
 
 ![Screenshot](https://github.com/Team-Inceptus/Novaconomy/assets/54124162/0bf0d340-0fcd-4049-8df5-dded4c326826)

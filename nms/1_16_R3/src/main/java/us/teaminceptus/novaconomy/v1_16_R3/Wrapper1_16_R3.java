@@ -7,7 +7,6 @@ import net.md_5.bungee.api.chat.TextComponent;
 import net.minecraft.server.v1_16_R3.*;
 import org.bukkit.Location;
 import org.bukkit.Material;
-import org.bukkit.OfflinePlayer;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.BlockData;
@@ -15,18 +14,15 @@ import org.bukkit.block.data.type.Fire;
 import org.bukkit.craftbukkit.v1_16_R3.entity.CraftPlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 import us.teaminceptus.novaconomy.abstraction.NBTWrapper;
 import us.teaminceptus.novaconomy.abstraction.NovaInventory;
 import us.teaminceptus.novaconomy.abstraction.Wrapper;
 import us.teaminceptus.novaconomy.api.NovaConfig;
-import us.teaminceptus.novaconomy.v1_16_R3.NBTWrapper1_16_R3;
-import us.teaminceptus.novaconomy.v1_16_R3.NovaInventory1_16_R3;
-import us.teaminceptus.novaconomy.v1_16_R3.PacketHandler1_16_R3;
 
 import java.util.function.Consumer;
+
+import static us.teaminceptus.novaconomy.scheduler.NovaScheduler.scheduler;
 
 final class Wrapper1_16_R3 implements Wrapper {
 
@@ -41,16 +37,6 @@ final class Wrapper1_16_R3 implements Wrapper {
     @Override
     public void sendActionbar(Player p, BaseComponent component) {
         p.spigot().sendMessage(ChatMessageType.ACTION_BAR, component);
-    }
-
-    @Override
-    public ItemStack createSkull(OfflinePlayer p) {
-        ItemStack item = new ItemStack(Material.PLAYER_HEAD);
-        SkullMeta meta = (SkullMeta) item.getItemMeta();
-        meta.setOwningPlayer(p);
-        item.setItemMeta(meta);
-
-        return item;
     }
 
     @Override
@@ -119,13 +105,10 @@ final class Wrapper1_16_R3 implements Wrapper {
             return true;
         });
 
-        new BukkitRunnable() {
-            @Override
-            public void run() {
-                PacketPlayOutBlockChange sent3 = new PacketPlayOutBlockChange(pos, Blocks.AIR.getBlockData());
-                ((CraftPlayer) p).getHandle().playerConnection.sendPacket(sent3);
-            }
-        }.runTaskLater(NovaConfig.getPlugin(), 2L);
+        scheduler.syncLater(() -> {
+            PacketPlayOutBlockChange sent3 = new PacketPlayOutBlockChange(pos, Blocks.AIR.getBlockData());
+            ((CraftPlayer) p).getHandle().playerConnection.sendPacket(sent3);
+        }, 2L);
     }
 
 }

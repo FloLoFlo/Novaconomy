@@ -27,11 +27,12 @@ import org.bukkit.util.io.BukkitObjectOutputStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import us.teaminceptus.novaconomy.abstraction.CommandWrapper;
-import us.teaminceptus.novaconomy.abstraction.Wrapper;
 import us.teaminceptus.novaconomy.api.Language;
 import us.teaminceptus.novaconomy.api.NovaConfig;
+import us.teaminceptus.novaconomy.api.auction.AuctionHouse;
 import us.teaminceptus.novaconomy.api.bank.Bank;
 import us.teaminceptus.novaconomy.api.business.Business;
+import us.teaminceptus.novaconomy.api.business.BusinessProduct;
 import us.teaminceptus.novaconomy.api.business.BusinessStatistics;
 import us.teaminceptus.novaconomy.api.business.Rating;
 import us.teaminceptus.novaconomy.api.corporation.Corporation;
@@ -51,11 +52,11 @@ import us.teaminceptus.novaconomy.api.player.Bounty;
 import us.teaminceptus.novaconomy.api.player.NovaPlayer;
 import us.teaminceptus.novaconomy.api.player.PlayerStatistics;
 import us.teaminceptus.novaconomy.api.settings.Settings;
-import us.teaminceptus.novaconomy.api.util.BusinessProduct;
 import us.teaminceptus.novaconomy.api.util.Price;
 import us.teaminceptus.novaconomy.api.util.Product;
 import us.teaminceptus.novaconomy.essentialsx.EssentialsListener;
 import us.teaminceptus.novaconomy.placeholderapi.Placeholders;
+import us.teaminceptus.novaconomy.scheduler.NovaScheduler;
 import us.teaminceptus.novaconomy.treasury.TreasuryRegistry;
 import us.teaminceptus.novaconomy.util.NovaUtil;
 import us.teaminceptus.novaconomy.vault.VaultRegistry;
@@ -65,8 +66,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.*;
-import java.util.*;
 import java.util.Date;
+import java.util.*;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -75,7 +76,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static us.teaminceptus.novaconomy.abstraction.Wrapper.*;
-import static us.teaminceptus.novaconomy.util.NovaUtil.format;
+import static us.teaminceptus.novaconomy.messages.MessageHandler.*;
+import static us.teaminceptus.novaconomy.scheduler.NovaScheduler.scheduler;
 
 /**
  * Class representing this Plugin
@@ -101,16 +103,6 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     static String prefix;
 
     static File marketFile;
-
-
-    /**
-     * Performs an API request to turn an OfflinePlayer's name to an OfflinePlayer object.
-     * @param name OfflinePlayer Name
-     * @return OfflinePlayer Object
-     */
-    public static OfflinePlayer getPlayer(String name) {
-        return Wrapper.getPlayer(name);
-    }
 
     public static boolean isIgnored(Player p, String s) {
         AtomicBoolean state = new AtomicBoolean();
@@ -139,11 +131,11 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             String dec;
             String k = "CommandVersion";
 
-            if (funcConfig.isInt(k)) {
-                int i = funcConfig.getInt(k, 3);
+            if (functionality.isInt(k)) {
+                int i = functionality.getInt(k, 3);
                 dec = i > 2 || i < 1 ? "auto" : String.valueOf(i);
             } else
-                dec = !funcConfig.getString(k, "auto").equalsIgnoreCase("auto") ? "auto" : funcConfig.getString(k, "auto");
+                dec = !functionality.getString(k, "auto").equalsIgnoreCase("auto") ? "auto" : functionality.getString(k, "auto");
 
             int tempV;
             try {
@@ -200,8 +192,8 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                 i++;
             }
 
-            if (np.isOnline() && np.hasNotifications())
-                np.getOnlinePlayer().sendMessage(format(getMessage("notification.interest"), i + " ", i == 1 ? get("constants.economy") : get("constants.economies")));
+            OfflinePlayer p = np.getPlayer();
+            messages.sendNotification(p, "notification.interest", i + " ", i == 1 ? get(p, "constants.economy") : get(p, "constants.economies"));
         }
     }
 
@@ -211,6 +203,10 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             if (!NovaConfig.getConfiguration().isInterestEnabled()) return;
             runInterest();
         }
+    };
+
+    private static final Runnable TICK_TASK = () -> {
+        AuctionHouse.refreshAuctionHouse(false);
     };
 
     private static void pingDB() {
@@ -227,14 +223,6 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             NovaConfig.print(e);
         }
     }
-
-    private static final BukkitRunnable PING_DB_RUNNABLE = new BukkitRunnable() {
-        @Override
-        public void run() {
-            if (!NovaConfig.getConfiguration().isDatabaseEnabled()) return;
-            pingDB();
-        }
-    };
 
     private static void runRestock() {
         if (!NovaConfig.getMarket().isMarketEnabled() || !NovaConfig.getMarket().isMarketRestockEnabled()) return;
@@ -303,8 +291,9 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                 missedMap.put(np, new HashMap<>());
                 for (Economy econ : previousBals.get(np).keySet()) {
                     double amount = amounts.get(np).get(econ);
+                    boolean canAfford = np.canAfford(econ, amount, NovaConfig.getConfiguration().getWhenNegativeAllowPayBanks());
 
-                    if (np.getBalance(econ) < amount) {
+                    if (!canAfford) {
                         Map<Economy, Double> newMap = new HashMap<>(missedMap.get(np));
                         newMap.put(econ, amount);
                         missedMap.put(np, newMap);
@@ -312,8 +301,8 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
                         PlayerMissTaxEvent event2 = new PlayerMissTaxEvent(np.getPlayer(), amount - np.getBalance(econ), econ);
                         Bukkit.getPluginManager().callEvent(event2);
-                    } else np.deposit(econ, amount);
-
+                    } else
+                        np.deposit(econ, amount);
                 }
             }
             sendTaxNotifications(previousBals.keySet(), missedMap);
@@ -322,15 +311,16 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
     private static void sendTaxNotifications(Collection<NovaPlayer> players, Map<NovaPlayer, Map<Economy, Double>> missedMap) {
         for (NovaPlayer np : players) {
-            if (!np.getPlayer().isOnline()) continue;
-            if (!np.hasNotifications()) continue;
             int j = missedMap.get(np).size();
             int i = Economy.getTaxableEconomies().size() - j;
+
+            OfflinePlayer p = np.getPlayer();
+
             if (j > 0)
-                np.getOnlinePlayer().sendMessage(format(getMessage("notification.tax.missed"), j + " ", j == 1 ? get("constants.economy") : get("constants.economies")));
+                messages.sendNotification(p, "notification.tax.missed", j + " ", j == 1 ? get(p, "constants.economy") : get(p, "constants.economies"));
 
             if (i > 0)
-                np.getOnlinePlayer().sendMessage(format(getMessage("notification.tax"), i + " ", i == 1 ? get("constants.economy") : get("constants.economies")));
+                messages.sendNotification(p, "notification.tax", i + " ", i == 1 ? get(p, "constants.economy") : get(p, "constants.economies"));
         }
     }
 
@@ -347,25 +337,18 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
     private static final Map<Business, Long> AUTOMATIC_SUPPLY_COUNT = new HashMap<>();
 
-    private static final BukkitRunnable AUTOMATIC_SUPPLY_RUNNABLE = new BukkitRunnable() {
-        @Override
-        public void run() {
-            for (Business b : Business.getBusinesses()) {
-                BusinessSupplyEvent.Interval interval = b.getSetting(Settings.Business.SUPPLY_INTERVAL);
-                long count = AUTOMATIC_SUPPLY_COUNT.getOrDefault(b, 0L);
+    private static final Runnable AUTOMATIC_SUPPLY_RUNNABLE = () -> {
+        for (Business b : Business.getBusinesses()) {
+            BusinessSupplyEvent.Interval interval = b.getSetting(Settings.Business.SUPPLY_INTERVAL);
+            long count = AUTOMATIC_SUPPLY_COUNT.getOrDefault(b, 0L);
 
-                if (count <= 0) {
-                    AUTOMATIC_SUPPLY_COUNT.put(b, interval.getTicks());
-                    new BukkitRunnable() {
-                        public void run() {
-                            b.supply();
-                        }
-                    }.runTask(getPlugin(Novaconomy.class));
-                    continue;
-                }
-
-                AUTOMATIC_SUPPLY_COUNT.put(b, count - 20);
+            if (count <= 0) {
+                AUTOMATIC_SUPPLY_COUNT.put(b, interval.getTicks());
+                scheduler.sync(b::supply);
+                continue;
             }
+
+            AUTOMATIC_SUPPLY_COUNT.put(b, count - 20);
         }
     };
 
@@ -373,7 +356,6 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     private static void updateRunnables() {
         Novaconomy plugin = getPlugin(Novaconomy.class);
 
-        config = plugin.getConfig();
         interest = config.getConfigurationSection("Interest");
         ncauses = config.getConfigurationSection("NaturalCauses");
 
@@ -422,7 +404,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
         });
     }
 
-    private static FileConfiguration funcConfig;
+    private static FileConfiguration functionality;
 
     static final List<Class<? extends ConfigurationSerializable>> SERIALIZABLE = ImmutableList.<Class<? extends ConfigurationSerializable>>builder()
             .add(Economy.class)
@@ -443,11 +425,6 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             getLogger().info("Placeholder API Found! Hooking...");
             new Placeholders(this);
             getLogger().info("Hooked into Placeholder API!");
-        }
-
-        if (hasVault()) {
-            getLogger().info("Vault Found! Hooking...");
-            VaultRegistry.reloadVault();
         }
 
         if (Bukkit.getPluginManager().getPlugin("Treasury") != null) {
@@ -539,7 +516,8 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             if (db == null) {
                 getLogger().severe("Failed to connect to database!");
                 throw new RuntimeException("Failed to connect to database");
-            }
+            } else
+                conversion = ConversionMethod.FILES_TO_DATABASE;
         } catch (SQLException e) {
             if (validate) {
                 getLogger().severe("Failed to connect to database!");
@@ -559,6 +537,12 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
         }
     }
 
+    private enum ConversionMethod {
+        DATABASE_TO_FILES, FILES_TO_DATABASE, NONE
+    }
+
+    private static ConversionMethod conversion = ConversionMethod.NONE;
+
     private void loadFiles() {
         if (isDatabaseEnabled()) {
             if (db != null) {
@@ -567,16 +551,12 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             }
 
             getLogger().info("Database found! Connecting...");
-
             connectDB(true);
-            PING_DB_RUNNABLE.runTaskTimerAsynchronously(this, 60 * 20, 60 * 20);
-
             getLogger().info("Connection Successful!");
-            convertToDatabase();
         } else {
             try {
                 getLogger().info("Database is disabled! Loading Files...");
-                convertToFiles();
+                conversion = ConversionMethod.DATABASE_TO_FILES;
 
                 File economiesDir = new File(getDataFolder(), "economies");
                 if (!economiesDir.exists()) economiesDir.mkdir();
@@ -600,7 +580,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                     if (!global.isSet("Bank." + econ.getName())) global.set("Bank." + econ.getName(), 0);
 
                 for (String s : global.getConfigurationSection("Bank").getKeys(false))
-                    if (Economy.getEconomy(s) == null) global.set("Bank." + s, null);
+                    if (Economy.byName(s) == null) global.set("Bank." + s, null);
 
                 global.save(globalF);
             } catch (IOException e) {
@@ -612,7 +592,6 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
         loadLegacyBusinesses();
 
         loadMarket();
-        NovaConfig.loadConfig();
     }
 
     private void convertToDatabase() {
@@ -753,7 +732,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                     Map<Economy, Double> balances = new HashMap<>();
 
                     for (Map.Entry<String, Object> entry : global.getConfigurationSection("Bank").getValues(false).entrySet()) {
-                        Economy econ = Economy.getEconomy(entry.getKey());
+                        Economy econ = Economy.byName(entry.getKey());
                         if (econ == null) continue;
 
                         double amount = ((Number) entry.getValue()).doubleValue();
@@ -782,7 +761,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             DatabaseMetaData meta = db.getMetaData();
 
             try (ResultSet economies = meta.getTables(null, null, "economies", null)) {
-                if (!NovaConfig.getEconomiesFolder().exists() && economies.first()) {
+                if (empty(NovaConfig.getEconomiesFolder().list()) && economies.first()) {
                     NovaConfig.getEconomiesFolder().mkdir();
                     getLogger().warning("Converting Economies to File Storage...");
 
@@ -804,7 +783,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             }
 
             try (ResultSet businesses = meta.getTables(null, null, "businesses", null)) {
-                if (!NovaConfig.getBusinessesFolder().exists() && businesses.first()) {
+                if (empty(NovaConfig.getBusinessesFolder().list() )&& businesses.first()) {
                     NovaConfig.getBusinessesFolder().mkdir();
                     getLogger().warning("Converting Businesses to File Storage...");
 
@@ -826,7 +805,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             }
 
             try (ResultSet corporations = meta.getTables(null, null, "corporations", null)) {
-                if (!NovaConfig.getCorporationsFolder().exists() && corporations.first()) {
+                if (empty(NovaConfig.getCorporationsFolder().list()) && corporations.first()) {
                     NovaConfig.getCorporationsFolder().mkdir();
                     getLogger().warning("Converting Corporations to File Storage...");
 
@@ -848,7 +827,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             }
 
             try (ResultSet players = meta.getTables(null, null, "players", null)) {
-                if (!NovaConfig.getPlayerDirectory().exists() && players.first()) {
+                if (empty(NovaConfig.getPlayerDirectory().list()) && players.first()) {
                     NovaConfig.getPlayerDirectory().mkdir();
                     getLogger().warning("Converting Players to File Storage...");
 
@@ -905,7 +884,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                         PreparedStatement ps = db.prepareStatement("SELECT * FROM bank");
                         ResultSet rs = ps.executeQuery();
                         while (rs.next()) {
-                            Economy econ = Economy.getEconomy(UUID.fromString(rs.getString("economy")));
+                            Economy econ = Economy.byId(UUID.fromString(rs.getString("economy")));
                             double amount = rs.getDouble("amount");
 
                             amounts.put(econ, amount);
@@ -926,6 +905,11 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
         disconnectDB();
     }
 
+    private static boolean empty(String[] array) {
+        if (array == null) return true;
+        return array.length == 0;
+    }
+
     private static void deleteDir(File dir) {
         if (dir.isDirectory())
             for (File child : dir.listFiles()) deleteDir(child);
@@ -942,20 +926,45 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     }
 
     /**
+     * Called when the Plugin is loaded
+     */
+    @Override
+    public void onLoad() {
+        config = getConfig();
+        loadFiles();
+
+        getLogger().info("Loaded Files...");
+
+        if (hasVault()) {
+            getLogger().info("Vault Found! Hooking...");
+            VaultRegistry.reloadVault();
+        }
+    }
+
+    /**
      * Called when the Plugin enables
      */
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        funcConfig = NovaConfig.loadFunctionalityFile();
-
-        config = getConfig();
+        functionality = NovaConfig.loadFunctionalityFile();
+        config = NovaConfig.loadConfig();
         interest = config.getConfigurationSection("Interest");
         ncauses = config.getConfigurationSection("NaturalCauses");
 
-        loadFiles();
+        getLogger().info("Loaded Configuration...");
+        switch (conversion) {
+            case DATABASE_TO_FILES:
+                convertToFiles();
+                break;
+            case FILES_TO_DATABASE:
+                convertToDatabase();
+                break;
+            default:
+                break;
+        }
 
-        getLogger().info("Loaded Files...");
+        loadTasks();
 
         SERIALIZABLE.forEach(ConfigurationSerialization::registerClass);
         getLogger().info("Initialized Serializables...");
@@ -974,9 +983,12 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
         Business.getBusinesses();
         Corporation.getCorporations();
         Economy.getEconomies();
+        AuctionHouse.refreshAuctionHouse(true);
+        ModifierReader.getAllModifiers();
 
         INTEREST_RUNNABLE.runTaskTimer(this, getInterestTicks(), getInterestTicks());
         TAXES_RUNNABLE.runTaskTimer(this, getTaxesTicks(), getTaxesTicks());
+        scheduler.syncRepeating(TICK_TASK, 1L, 1L);
 
         for (Player p : Bukkit.getOnlinePlayers()) w.addPacketInjector(p);
 
@@ -984,7 +996,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                 .map(b -> new AbstractMap.SimpleEntry<>(b, 0L))
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue))
         );
-        AUTOMATIC_SUPPLY_RUNNABLE.runTaskTimerAsynchronously(this, 0L, 20L);
+        scheduler.asyncRepeating(AUTOMATIC_SUPPLY_RUNNABLE, 20L, 20L);
 
         getLogger().info("Loaded Core Functionality...");
 
@@ -999,9 +1011,9 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                 .setNotifyOpsOnJoin(true)
                 .setSupportLink("https://discord.gg/WVFNWEvuqX")
                 .setChangelogLink("https://github.com/Team-Inceptus/Novaconomy/releases/")
-                .setUserAgent("Team-Inceptus/Novaconomy UpdateChecker")
+                .setUserAgent(USER_AGENT)
                 .setColoredConsoleOutput(true)
-                .setDonationLink("https://www.patreon.com/teaminceptus")
+                .setDonationLink("https://www.patreon.com/gamercoder215")
                 .setNotifyRequesters(true)
                 .checkEveryXHours(1)
                 .checkNow();
@@ -1021,6 +1033,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             return count.get();
         }));
         metrics.addCustomChart(new SimplePie("mysql_enabled", () -> String.valueOf(NovaConfig.getConfiguration().isDatabaseEnabled())));
+        metrics.addCustomChart(new SingleLineChart("auction_items", () -> AuctionHouse.getProducts().size()));
 
         getLogger().info("Loaded Dependencies...");
 
@@ -1029,6 +1042,15 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
         saveConfig();
         getLogger().info("Successfully loaded Novaconomy");
+    }
+
+    // Some tasks that were loaded by loadFiles or Vault are needed to be ran in onEnable
+    private void loadTasks() {
+        if (isDatabaseEnabled())
+            scheduler.asyncRepeating(NovaConfig.getConfiguration()::isDatabaseEnabled, Novaconomy::pingDB, 60 * 20, 60 * 20);
+
+        scheduler.asyncRepeating(() -> NovaConfig.getMarket().isMarketEnabled() && NovaConfig.getMarket().isMarketRestockEnabled(),
+                Novaconomy::runRestock, getMarketRestockInterval(), getMarketRestockInterval());
     }
 
     @Override
@@ -1042,6 +1064,9 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             disconnectDB();
             getLogger().info("Closed Database Connection...");
         }
+
+        scheduler.cancelAll();
+        getLogger().info("Cancelled Tasks...");
 
         getLogger().info("Successfully disabled Novcaonomy");
     }
@@ -1081,7 +1106,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                 econ.saveEconomy();
             });
 
-            NovaUtil.sync(() -> {
+            scheduler.sync(() -> {
                 economies.delete();
                 getLogger().info("Migration complete!");
             });
@@ -1134,9 +1159,9 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
     @Override
     public double getMaxConvertAmount(Economy econ) {
-        if (funcConfig.getConfigurationSection("EconomyMaxConvertAmounts").contains(econ.getName()))
-            return funcConfig.getDouble("EconomyMaxConvertAmounts." + econ.getName());
-        return funcConfig.getDouble("MaxConvertAmount", -1);
+        if (functionality.getConfigurationSection("EconomyMaxConvertAmounts").contains(econ.getName()))
+            return functionality.getDouble("EconomyMaxConvertAmounts." + econ.getName());
+        return functionality.getDouble("MaxConvertAmount", -1);
     }
 
     @Override
@@ -1577,6 +1602,11 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     }
 
     @Override
+    public boolean hasBuildingIncrease() {
+        return ncauses.getBoolean("BuildingIncrease", true);
+    }
+
+    @Override
     public double getInterestMultiplier() {
         return interest.getDouble("ValueMultiplier", 1.03D);
     }
@@ -1608,6 +1638,11 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     }
 
     @Override
+    public int getBuildingChance() {
+        return ncauses.getInt("BuildingIncreaseChance");
+    }
+
+    @Override
     public void setKillChance(int chance) {
         ncauses.set("KillIncreaseChance", chance);
         saveConfig();
@@ -1632,6 +1667,12 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     }
 
     @Override
+    public void setBuildingChance(int chance) {
+        ncauses.set("BuildingIncreaseChance", chance);
+        saveConfig();
+    }
+
+    @Override
     public void setFarmingIncrease(boolean increase) {
         ncauses.set("FarmingIncrease", increase);
         saveConfig();
@@ -1646,6 +1687,12 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     @Override
     public void setKillIncrease(boolean increase) {
         ncauses.set("KillIncrease", increase);
+        saveConfig();
+    }
+
+    @Override
+    public void setBuildingIncrease(boolean increase) {
+        ncauses.set("BuildingIncrease", increase);
         saveConfig();
     }
 
@@ -1831,6 +1878,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
             // Plants / Decor
             .put("grass", 2.1)
+            .put("short_grass", 2.1)
             .put("tall_grass", 3.4)
             .put("fern", 2.1)
             .put("large_fern", 3.4)
@@ -1902,14 +1950,74 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
             .put("ender_stone", 2.3)
             .put("end_stone", 2.3)
 
+            // Redstone
+            .put("redstone_block", 580.95)
+            .put("lever", 4.62)
+            .put("stone_button", 4.32)
+            .put("daylight_detector", 202.74)
+            .put("tripwire_hook", 32.12)
+            .put("detector_rail", 82.34)
+            .put("activator_rail", 91.21)
+            .put("powered_rail", 76.98)
+            .put("dispenser", 134.58)
+            .put("dropper", 124.934)
+            .put("hopper", 139.46)
+            .put("iron_door", 176.45)
+            .put("iron_trapdoor", 169.97)
+            .put("repeater", 54.25)
+            .put("comparator", 75.5)
+            .put("redstone_comparator", 75.5)
+            .put("redstone_torch", 24.65)
+            .put("redstone_torch_on", 24.65)
+            .put("redstone_lamp", 67.81)
+            .put("redstone_lamp_off", 67.81)
+            .put("target", 102.74)
+            .put("rail", 68.11)
+            .put("rails", 68.11)
+            .put("observer", 84.78)
+            .put("oak_trapdoor", 43.12)
+            .put("spruce_trapdoor", 43.12)
+            .put("birch_trapdoor", 43.12)
+            .put("jungle_trapdoor", 43.12)
+            .put("acacia_trapdoor", 43.12)
+            .put("dark_oak_trapdoor", 43.12)
+            .put("warped_trapdoor", 46.32)
+            .put("crimson_trapdoor", 46.32)
+            .put("cherry_trapdoor", 43.12)
+            .put("oak_button", 4.18)
+            .put("spruce_button", 4.18)
+            .put("birch_button", 4.18)
+            .put("jungle_button", 4.18)
+            .put("acacia_button", 4.18)
+            .put("dark_oak_button", 4.18)
+            .put("warped_button", 5.32)
+            .put("crimson_button", 5.32)
+            .put("cherry_button", 4.18)
+            .put("oak_pressure_plate", 7.64)
+            .put("wooden_pressure_plate", 7.64)
+            .put("spruce_pressure_plate", 7.64)
+            .put("birch_pressure_plate", 7.64)
+            .put("jungle_pressure_plate", 7.64)
+            .put("acacia_pressure_plate", 7.64)
+            .put("dark_oak_pressure_plate", 7.64)
+            .put("warped_pressure_plate", 10.75)
+            .put("crimson_pressure_plate", 10.75)
+            .put("cherry_pressure_plate", 7.64)
+            .put("stone_plate", 11.82)
+            .put("stone_pressure_plate", 11.82)
+            .put("heavy_weighted_pressure_plate", 60.96)
+            .put("light_weighted_pressure_plate", 73.60)
+            .put("piston", 158.5)
+            .put("sticky_piston", 172.49)
+
             // Rarities
             .put("golden_apple", 159.2)
-            .put("enchanted_golden_apple", 2790.55)
+            .put("enchanted_golden_apple", 2893.68)
             .put("golden_carrot", 82.1)
             .put("creeper_head", 365.4)
-            .put("creeper_banner_pattern", 375.65)
-            .put("skull_banner_pattern", 475.0)
-            .put("wither_skeleton_skull", 468.4)
+            .put("creeper_banner_pattern", 384.65)
+            .put("skull_banner_pattern", 471.0)
+            .put("wither_skeleton_skull", 467.4)
             .put("skeleton_skull", 234.55)
             .put("globe_banner_pattern", 835.75)
             .put("piglin_banner_pattern", 865.75)
@@ -1929,15 +2037,6 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
                 .map(Material::matchMaterial)
                 .filter(w::isItem)
                 .forEach(m -> stock.putIfAbsent(m, getMarketRestockAmount()));
-
-        boolean scheduled = false;
-        try {
-            RESTOCK_RUNNABLE.getTaskId();
-            scheduled = true;
-        } catch (IllegalStateException ignored) {}
-
-        if (isMarketEnabled() && isMarketRestockEnabled() && !scheduled)
-            RESTOCK_RUNNABLE.runTaskTimerAsynchronously(this, getMarketRestockInterval(), getMarketRestockInterval());
     }
 
     private void writeMarket() {
@@ -1962,14 +2061,17 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
         }
     }
 
-    private static void writeMarketDB() throws SQLException, IOException {
+    private static void checkMarketTable() throws SQLException {
         db.createStatement().execute("CREATE TABLE IF NOT EXISTS market (" +
                 "material VARCHAR(255) NOT NULL, " +
                 "purchases LONGBLOB NOT NULL, " +
                 "stock BIGINT NOT NULL, " +
                 "PRIMARY KEY (material))"
         );
+    }
 
+    private static void writeMarketDB() throws SQLException, IOException {
+        checkMarketTable();
         for (Material m : NovaConfig.getMarket().getAllSold()) {
             String sql;
             PreparedStatement has = db.prepareStatement("SELECT * FROM market WHERE material = ?");
@@ -2001,6 +2103,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
     }
 
     private static void readMarketDB() throws SQLException, IOException, ClassNotFoundException {
+        checkMarketTable();
         for (Material m : NovaConfig.getMarket().getAllSold()) {
             PreparedStatement ps = db.prepareStatement("SELECT * FROM market WHERE material = ?");
             ps.setString(1, m.name());
@@ -2093,9 +2196,29 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
     @Override
     public void setStock(@NotNull Material m, long stock) throws IllegalArgumentException {
+        if (m == null) throw new IllegalArgumentException("Material cannot be null");
+        if (!prices.containsKey(m.name().toLowerCase())) return;
+        if (stock < 0) throw new IllegalArgumentException("Stock must be positive");
+
         Novaconomy.stock.put(m, stock);
         writeMarket();
     }
+
+    @Override
+    public void setStock(@NotNull Iterable<Material> materials, long stock) throws IllegalArgumentException {
+        if (materials == null) throw new IllegalArgumentException("Materials cannot be null");
+        if (stock < 0) throw new IllegalArgumentException("Stock must be positive");
+
+        AtomicBoolean write = new AtomicBoolean(false);
+        for (Material m : materials) {
+            if (!prices.containsKey(m.name().toLowerCase())) continue;
+            Novaconomy.stock.put(m, stock);
+            write.compareAndSet(false, true);
+        }
+
+        writeMarket();
+    }
+
 
     @Override
     public @NotNull Receipt buy(@NotNull OfflinePlayer buyer, @NotNull Material m, int amount, @NotNull Economy econ) throws IllegalArgumentException, CancellationException {
@@ -2108,7 +2231,7 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
         double price = getPrice(m, econ) * amount;
         if (price <= 0) throw new IllegalArgumentException("Price must be positive");
-        if (np.getBalance(econ) < price) throw new IllegalArgumentException("Insufficient funds");
+        if (!np.canAfford(econ, price, NovaConfig.getConfiguration().getWhenNegativeAllowPurchaseMarket())) throw new IllegalArgumentException("Insufficient funds");
 
         Receipt r = new Receipt(m, price / amount, amount, buyer);
         PlayerMarketPurchaseEvent event = new PlayerMarketPurchaseEvent(buyer, r);
@@ -2314,6 +2437,170 @@ public final class Novaconomy extends JavaPlugin implements NovaConfig, NovaMark
 
         config.set("Market.CustomItems", items);
         saveConfig();
+    }
+
+    @Override
+    public @NotNull Set<Economy> getWhitelistedEconomies() {
+        return ImmutableSet.copyOf(config.getStringList("Market.Purchasing.WhitelistedEconomies").stream()
+                .map(Economy::byName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet()));
+    }
+
+    @Override
+    public void setWhitelistedEconomies(@NotNull Iterable<Economy> economies) {
+        config.set("Market.Purchasing.WhitelistedEconomies", ImmutableList.copyOf(economies)
+                .stream()
+                .map(Economy::getName)
+                .collect(Collectors.toList())
+        );
+        saveConfig();
+    }
+
+    @Override
+    public @NotNull Set<Economy> getBlacklistedEconomies() {
+        return ImmutableSet.copyOf(config.getStringList("Market.Purchasing.BlacklistedEconomies").stream()
+                .map(Economy::byName)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet()));
+    }
+
+    @Override
+    public void setBlacklistedEconomies(@NotNull Iterable<Economy> economies) {
+        config.set("Market.Purchasing.BlacklistedEconomies", ImmutableList.copyOf(economies)
+                .stream()
+                .map(Economy::getName)
+                .collect(Collectors.toList())
+        );
+        saveConfig();
+    }
+
+    @Override
+    public boolean isNegativeBalancesEnabled() {
+        return functionality.getBoolean("NegativeBalances.Enabled", false);
+    }
+
+    @Override
+    public void setNegativeBalancesEnabled(boolean enabled) {
+        functionality.set("NegativeBalances.Enabled", enabled);
+        saveConfig();
+    }
+
+    @Override
+    public double getMaxNegativeBalance() {
+        return functionality.getDouble("NegativeBalances.MaxNegativeBalance", -100.0);
+    }
+
+    @Override
+    public void setMaxNegativeBalance(double max) throws IllegalArgumentException {
+        if (max >= 0) throw new IllegalArgumentException("Max negative balance must be negative");
+
+        functionality.set("NegativeBalances.MaxNegativeBalance", max);
+        saveConfig();
+    }
+
+    @Override
+    public boolean isNegativeBalancesIncludeZero() {
+        return functionality.getBoolean("NegativeBalances.IncludeZero", true);
+    }
+
+    @Override
+    public void setNegativeBalancesIncludeZero(boolean include) {
+        functionality.set("NegativeBalances.IncludeZero", include);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowPurchaseProducts() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.PurchaseProducts", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowPurchaseProducts(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.PurchaseProducts", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowPurchaseMarket() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.PurchaseMarket", true);
+    }
+
+    @Override
+    public void setWhenNegativeAllowPurchaseMarket(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.PurchaseMarket", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowPurchaseAuction() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.PurchaseAuction", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowPurchaseAuction(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.PurchaseAuction", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowPayPlayers() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.PayPlayers", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowPayPlayers(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.PayPlayers", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowPayBanks() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.PayBanks", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowPayBanks(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.PayBanks", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowCreateChecks() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.CreateChecks", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowCreateChecks(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.CreateChecks", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowCreateBounties() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.CreateBounties", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowCreateBounties(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.CreateBounties", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean getWhenNegativeAllowConvertBalances() {
+        return functionality.getBoolean("NegativeBalances.WhenNegative.ConvertBalance", false);
+    }
+
+    @Override
+    public void setWhenNegativeAllowConvertBalances(boolean allow) {
+        functionality.set("NegativeBalances.WhenNegative.ConvertBalance", allow);
+        saveConfig();
+    }
+
+    @Override
+    public boolean canBypassMaxNegativeAmount(@NotNull OfflinePlayer p) {
+        return isIncludedIn(functionality.getStringList("NegativeBalances.BypassMax"), p);
     }
 
 }

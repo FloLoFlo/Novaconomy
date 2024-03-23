@@ -8,12 +8,10 @@ import us.teaminceptus.novaconomy.api.NovaConfig;
 import us.teaminceptus.novaconomy.api.corporation.Corporation.JoinType;
 import us.teaminceptus.novaconomy.api.events.business.BusinessSupplyEvent;
 
+import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -117,6 +115,29 @@ public final class Settings {
          */
         @SettingDescription("settings.personal.rating")
         ANONYMOUS_RATING("constants.settings.name.anonymous_rate", false),
+        /**
+         * Whether the player's transaction history is publicly visible
+         */
+        @SettingDescription("settings.personal.transaction_history")
+        PUBLIC_TRANSACTION_HISTORY("constants.settings.name.public_transaction_history", true),
+
+        /**
+         * Whether the player's statistics are publicly visible
+         */
+        @SettingDescription("settings.personal.statistics")
+        PUBLIC_STATISTICS("constants.settings.name.public_stats", true),
+
+        /**
+         * Whether your balance should be shown on any Economy Wheel
+         */
+        @SettingDescription("settings.personal.balance_economy_wheel")
+        BALANCE_ON_ECONOMY_WHEEL("constants.settings.name.balance_economy_wheel", true),
+
+        /**
+         * Whether messages sent to you by Novaconomy can include additional hover and click mechanics
+         */
+        @SettingDescription("settings.personal.advanced_text")
+        ADVANCED_TEXT("constants.settings.name.advanced_text", true)
 
         ;
 
@@ -170,7 +191,7 @@ public final class Settings {
     /**
      * Represents Business Settings
      */
-    public static final class Business<T> implements NovaSetting<T> {
+    public static final class Business<T> implements NovaSetting<T>, Serializable {
         /**
          * Whether the owner of the Business is public.
          */
@@ -212,13 +233,15 @@ public final class Settings {
         @SettingDescription("settings.business.supply_interval")
         public static final Business<BusinessSupplyEvent.Interval> SUPPLY_INTERVAL = ofEnum("supply_interval","constants.settings.name.supply_interval", BusinessSupplyEvent.Interval.class, BusinessSupplyEvent.Interval.HOUR);
 
+        private static final long serialVersionUID = -7174484717138758485L;
+
         private final String key;
-        private final Supplier<T> defaultValue;
+        private final T defaultValue;
         private final String dKey;
         private final Set<T> possibleValues;
         private final Class<T> clazz;
 
-        private Business(String key, String dKey, Class<T> clazz, Supplier<T> defaultValue, Set<T> possibleValues) {
+        private Business(String key, String dKey, Class<T> clazz, T defaultValue, Set<T> possibleValues) {
             this.key = key;
             this.dKey = dKey;
             this.defaultValue = defaultValue;
@@ -227,20 +250,20 @@ public final class Settings {
         }
 
         private static <T extends Enum<T>> Business<T> ofEnum(String key, String dKey, Class<T> clazz, T defaultValue) {
-            return new Business<>(key, dKey, clazz, () -> defaultValue, ImmutableSet.copyOf(defaultValue.getDeclaringClass().getEnumConstants()));
+            return new Business<>(key, dKey, clazz, defaultValue, ImmutableSet.copyOf(defaultValue.getDeclaringClass().getEnumConstants()));
         }
 
         private static Business<Boolean> ofBoolean(String key, String dKey, boolean defaultValue) {
-            return new Business<>(key, dKey, Boolean.class, () -> defaultValue, ImmutableSet.of(true, false));
+            return new Business<>(key, dKey, Boolean.class, defaultValue, ImmutableSet.of(true, false));
         }
 
         private static Business<Boolean> ofBoolean(String key, String dKey, Supplier<Boolean> defaultValue) {
-            return new Business<>(key, dKey, Boolean.class, defaultValue, ImmutableSet.of(true, false));
+            return new Business<>(key, dKey, Boolean.class, defaultValue.get(), ImmutableSet.of(true, false));
         }
 
         @Override
         public T getDefaultValue() {
-            return defaultValue.get();
+            return defaultValue;
         }
 
         @Override
@@ -344,12 +367,25 @@ public final class Settings {
 
             throw new IllegalArgumentException("Unknown Business Setting: " + key);
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Business<?> business = (Business<?>) o;
+            return Objects.equals(key, business.key);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(key);
+        }
     }
 
     /**
      * Represents Corporation Settings
      */
-    public static final class Corporation<T> implements NovaSetting<T> {
+    public static final class Corporation<T> implements NovaSetting<T>, Serializable {
 
         /**
          * The privacy setting of a Corporation, determining how and whether businesses can join.
@@ -362,6 +398,20 @@ public final class Settings {
          */
         @SettingDescription("settings.corporation.chat")
         public static final Corporation<Boolean> CHAT = ofBoolean("chat", "constants.settings.name.chat", true);
+
+        /**
+         * Whether anyone can teleport to the Corporation's headquarters.
+         */
+        @SettingDescription("settings.corporation.public_headquarters")
+        public static final Corporation<Boolean> PUBLIC_HEADQUARTERS = ofBoolean("public_headquarters", "constants.settings.name.public_headquarters", true);
+
+        /**
+         * Whether random Products under this Corporation will be featured on the main Corporation page.
+         */
+        @SettingDescription("settings.corporation.feature_products")
+        public static final Corporation<Boolean> FEATURE_PRODUCTS = ofBoolean("feature_products", "constants.settings.name.feature_products", true);
+
+        private static final long serialVersionUID = 2912177260114871976L;
 
         private final String key;
         private final T defaultValue;
@@ -484,12 +534,26 @@ public final class Settings {
         public T parseValue(@NotNull String value) {
             switch (key) {
                 case "join_type": return (T) JoinType.valueOf(value.toUpperCase());
-                case "chat": return (T) Boolean.valueOf(value);
+                case "chat":
+                case "public_headquarters":
+                case "feature_products": return (T) Boolean.valueOf(value);
                 default:
                     throw new IllegalArgumentException("Unknown Corporation Setting: " + key);
             }
         }
 
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            Corporation<?> that = (Corporation<?>) o;
+            return Objects.equals(key, that.key);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(key);
+        }
     }
 
 

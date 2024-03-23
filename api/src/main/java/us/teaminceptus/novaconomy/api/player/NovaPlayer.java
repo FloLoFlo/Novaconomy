@@ -15,10 +15,14 @@ import org.bukkit.util.io.BukkitObjectInputStream;
 import org.bukkit.util.io.BukkitObjectOutputStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import us.teaminceptus.novaconomy.api.Language;
 import us.teaminceptus.novaconomy.api.NovaConfig;
+import us.teaminceptus.novaconomy.api.auction.AuctionProduct;
 import us.teaminceptus.novaconomy.api.bank.Bank;
 import us.teaminceptus.novaconomy.api.business.Business;
 import us.teaminceptus.novaconomy.api.business.Rating;
+import us.teaminceptus.novaconomy.api.corporation.Corporation;
+import us.teaminceptus.novaconomy.api.corporation.CorporationPermission;
 import us.teaminceptus.novaconomy.api.economy.Economy;
 import us.teaminceptus.novaconomy.api.economy.market.NovaMarket;
 import us.teaminceptus.novaconomy.api.economy.market.Receipt;
@@ -50,9 +54,11 @@ public final class NovaPlayer {
     private static final String LBD = "last_bank_deposit";
     private final OfflinePlayer p;
 
+    private final Set<AuctionProduct> wonAuctions = new HashSet<>();
+
     private final Map<String, Object> pConfig = new HashMap<>();
 
-    final PlayerStatistics stats;
+    PlayerStatistics stats;
 
     private static void checkTable() throws SQLException {
         Connection db = NovaConfig.getConfiguration().getDatabaseConnection();
@@ -61,6 +67,7 @@ public final class NovaPlayer {
                 "id CHAR(36) NOT NULL," +
                 "data MEDIUMBLOB NOT NULL," +
                 "stats BLOB(65535) NOT NULL," +
+                "won_auctions MEDIUMBLOB NOT NULL," +
                 "PRIMARY KEY (id))"
         );
     }
@@ -96,13 +103,16 @@ public final class NovaPlayer {
                     BukkitObjectInputStream statsBIs = new BukkitObjectInputStream(statsIs);
                     stats = (PlayerStatistics) statsBIs.readObject();
                     statsBIs.close();
-                } else
-                    stats = new PlayerStatistics(p);
+
+                    ByteArrayInputStream wonAuctionsIs = new ByteArrayInputStream(rs.getBytes("won_auctions"));
+                    BukkitObjectInputStream wonAuctionsBIs = new BukkitObjectInputStream(wonAuctionsIs);
+                    wonAuctions.addAll((Set<AuctionProduct>) wonAuctionsBIs.readObject());
+                    wonAuctionsBIs.close();
+                }
 
                 rs.close();
             } catch (Exception e) {
                 NovaConfig.print(e);
-                stats = new PlayerStatistics(p);
             }
         else {
             if (!NovaConfig.getPlayerDirectory().exists()) NovaConfig.getPlayerDirectory().mkdir();
@@ -118,6 +128,7 @@ public final class NovaPlayer {
             pConfig.putAll(toMap(config));
 
             stats = pConfig.containsKey("stats") ? (PlayerStatistics) pConfig.get("stats") : new PlayerStatistics(p);
+            wonAuctions.addAll((Collection<AuctionProduct>) pConfig.getOrDefault("won_auctions", new ArrayList<>()));
         }
 
         this.stats = stats;
@@ -191,9 +202,11 @@ public final class NovaPlayer {
      * @throws IllegalArgumentException if economy is null
      */
     public void setBalance(@NotNull Economy econ, double newBal) throws IllegalArgumentException {
-        if (newBal < 0) throw new IllegalArgumentException("Balance cannot be negative");
+        if (newBal < 0 && !NovaConfig.getConfiguration().isNegativeBalancesEnabled()) throw new IllegalArgumentException("Balance cannot be negative");
+        if (newBal < NovaConfig.getConfiguration().getMaxNegativeBalance()) throw new IllegalArgumentException("Balance cannot be less than the max negative balance (" + NovaConfig.getConfiguration().getMaxNegativeBalance() + ")");
         if (econ == null) throw new IllegalArgumentException("Economy cannot be null");
 
+        checkStats();
         pConfig.put("economies." + econ.getName().toLowerCase() + ".balance", newBal);
 
         if (newBal > stats.highestBalance) {
@@ -231,20 +244,26 @@ public final class NovaPlayer {
                 BukkitObjectOutputStream bOs = new BukkitObjectOutputStream(os);
                 bOs.writeObject(pConfig);
                 bOs.close();
-
                 ps.setBytes(2, os.toByteArray());
 
                 ByteArrayOutputStream statsOs = new ByteArrayOutputStream();
                 BukkitObjectOutputStream statsBos = new BukkitObjectOutputStream(statsOs);
                 statsBos.writeObject(this.stats);
                 statsBos.close();
-
                 ps.setBytes(3, statsOs.toByteArray());
+
+                ByteArrayOutputStream wonAuctionsOs = new ByteArrayOutputStream();
+                BukkitObjectOutputStream wonAuctionsBos = new BukkitObjectOutputStream(wonAuctionsOs);
+                wonAuctionsBos.writeObject(this.wonAuctions);
+                wonAuctionsBos.close();
+                ps.setBytes(4, wonAuctionsOs.toByteArray());
 
                 ps.executeUpdate();
                 ps.close();
             } else {
                 pConfig.put("stats", this.stats);
+                pConfig.put("won_auctions", new ArrayList<>(this.wonAuctions));
+
                 File pFile = new File(NovaConfig.getPlayerDirectory(), p.getUniqueId().toString() + ".yml");
                 if (!pFile.exists()) pFile.createNewFile();
 
@@ -277,6 +296,7 @@ public final class NovaPlayer {
      */
     public void add(@NotNull Economy econ, double add) throws IllegalArgumentException {
         if (econ == null) throw new IllegalArgumentException("Economy cannot be null");
+        checkStats();
 
         stats.moneyAdded += add;
         setBalance(econ, getBalance(econ) + add);
@@ -290,6 +310,7 @@ public final class NovaPlayer {
      */
     public void remove(@NotNull Economy econ, double remove) throws IllegalArgumentException {
         if (econ == null) throw new IllegalArgumentException("Economy cannot be null");
+        checkStats();
 
         stats.totalMoneySpent += remove;
         setBalance(econ, getBalance(econ) - remove);
@@ -315,13 +336,92 @@ public final class NovaPlayer {
     }
 
     /**
-     * Whether this Nova Player can afford a Product.
+     * Whether this NovaPlayer can afford a Product.
      * @param p Product to buy
      * @return true if can afford, else false
      */
     public boolean canAfford(@Nullable Product p) {
+        return canAfford(p, false);
+    }
+
+    /**
+     * Whether this NovaPlayer can afford a Product.
+     * @param p Product to buy
+     * @param allowDebt Whether to allow debt. This will be ignored if {@link NovaConfig#isNegativeBalancesEnabled()} returns false.
+     * @return true if can afford, else false
+     */
+    public boolean canAfford(@Nullable Product p, boolean allowDebt) {
+        return canAfford(p == null ? null : p.getPrice(), allowDebt);
+    }
+
+    /**
+     * Whether this NovaPlayer can afford a Price.
+     * @param p Price to buy at
+     * @return true if can afford, else false
+     */
+    public boolean canAfford(@Nullable Price p) {
+        return canAfford(p, false);
+    }
+
+    /**
+     * Whether this NovaPlayer can afford a Price.
+     * @param p Price to buy at
+     * @param allowDebt Whether to allow debt. This will be ignored if {@link NovaConfig#isNegativeBalancesEnabled()} returns false.
+     * @return true if can afford, else false
+     */
+    public boolean canAfford(@Nullable Price p, boolean allowDebt) {
         if (p == null) return false;
-        return getBalance(p.getEconomy()) >= p.getPrice().getAmount();
+        return canAfford(p.getEconomy(), p.getAmount(), allowDebt);
+    }
+
+    /**
+     * Whether this NovaPlayer can afford an amount.
+     * @param econ Economy to use
+     * @param amount Amount to buy at
+     * @return true if can afford, else false
+     */
+    public boolean canAfford(@Nullable Economy econ, double amount) {
+        return canAfford(econ, amount, false);
+    }
+
+    /**
+     * Whether this NovaPlayer can afford an amount.
+     * @param econ Economy to use
+     * @param amount Amount to buy at
+     * @param allowDebt Whether to allow debt. This will be ignored if {@link NovaConfig#isNegativeBalancesEnabled()} returns false.
+     * @return true if can afford, else false
+     */
+    public boolean canAfford(@Nullable Economy econ, double amount, boolean allowDebt) {
+        if (econ == null) return false;
+        if (amount <= 0) return true;
+
+        double bal = getBalance(econ);
+        double result = bal - amount;
+
+        if (!NovaConfig.getConfiguration().isNegativeBalancesEnabled()) return result >= 0;
+
+        if (!allowDebt) {
+            if (isInDebt(econ)) return false;
+            return result >= 0;
+        } else {
+            double max = canBypassMaxNegativeBalance() ? Double.MIN_VALUE : NovaConfig.getConfiguration().getMaxNegativeBalance();
+            return result >= max;
+        }
+    }
+
+    /**
+     * Gets whether this NovaPlayer is currently in debt.
+     * @param econ Economy to use
+     * @return true if in debt, else false
+     */
+    public boolean isInDebt(@Nullable Economy econ) {
+        if (econ == null) return false;
+        if (!NovaConfig.getConfiguration().isNegativeBalancesEnabled()) return false;
+
+        if (NovaConfig.getConfiguration().isNegativeBalancesIncludeZero())
+            return getBalance(econ) <= 0;
+        else
+            return getBalance(econ) < 0;
     }
 
     /**
@@ -330,7 +430,7 @@ public final class NovaPlayer {
      */
     @NotNull
     public PlayerWithdrawEvent getLastBankWithdraw() {
-        return new PlayerWithdrawEvent(getOnlinePlayer(), (double) pConfig.getOrDefault(LBW + ".amount", 0D), Economy.getEconomy((String) pConfig.getOrDefault(LBW + ".economy", "")), (long) pConfig.getOrDefault(LBW + ".timestamp", 0));
+        return new PlayerWithdrawEvent(getOnlinePlayer(), (double) pConfig.getOrDefault(LBW + ".amount", 0D), Economy.byName((String) pConfig.getOrDefault(LBW + ".economy", "")), (long) pConfig.getOrDefault(LBW + ".timestamp", 0));
     }
 
     /**
@@ -339,7 +439,7 @@ public final class NovaPlayer {
      */
     @NotNull
     public PlayerDepositEvent getLastBankDeposit() {
-        return new PlayerDepositEvent(getOnlinePlayer(), (double) pConfig.getOrDefault(LBD + ".amount", 0D), Economy.getEconomy((String) pConfig.getOrDefault(LBD + ".economy", "")), (long) pConfig.getOrDefault(LBD + ".timestamp", 0));
+        return new PlayerDepositEvent(getOnlinePlayer(), (double) pConfig.getOrDefault(LBD + ".amount", 0D), Economy.byName((String) pConfig.getOrDefault(LBD + ".economy", "")), (long) pConfig.getOrDefault(LBD + ".timestamp", 0));
     }
 
     /**
@@ -359,6 +459,7 @@ public final class NovaPlayer {
         if (System.currentTimeMillis() - 86400000 < (long) pConfig.getOrDefault(LBW + ".timestamp", 0))
             throw new UnsupportedOperationException("Last withdraw was less than 24 hours ago");
 
+        checkStats();
         Bank.removeBalance(econ, amount);
         add(econ, amount);
 
@@ -376,24 +477,27 @@ public final class NovaPlayer {
     /**
      * Deposits an amount to the global bank
      * @param econ Economy to deposit to
-     * @param firstAmount Amount to deposit
-     * @throws IllegalArgumentException if economy is null, or amount is negative
+     * @param amount Amount to deposit
+     * @throws IllegalArgumentException if economy is null, amount is negative, or cannot afford
      */
-    public void deposit(@NotNull Economy econ, double firstAmount) throws IllegalArgumentException {
+    public void deposit(@NotNull Economy econ, double amount) throws IllegalArgumentException {
         if (econ == null) throw new IllegalArgumentException("Economy cannot be null");
-        if (firstAmount < 0) throw new IllegalArgumentException("Amount cannot be negative");
+        if (amount < 0) throw new IllegalArgumentException("Amount cannot be negative");
 
-        PlayerDepositEvent event = new PlayerDepositEvent(getOnlinePlayer(), firstAmount, econ, System.currentTimeMillis());
+        if (!canAfford(econ, amount, NovaConfig.getConfiguration().getWhenNegativeAllowPayBanks()))
+            throw new IllegalArgumentException("Player cannot afford this amount");
+
+        PlayerDepositEvent event = new PlayerDepositEvent(getOnlinePlayer(), amount, econ, System.currentTimeMillis());
         Bukkit.getPluginManager().callEvent(event);
-        double amount = event.getAmount();
+        double amount0 = event.getAmount();
 
-        Bank.addBalance(econ, amount);
-        remove(econ, amount);
+        Bank.addBalance(econ, amount0);
+        remove(econ, amount0);
 
-        pConfig.put(LBW + ".amount", amount);
+        pConfig.put(LBW + ".amount", amount0);
         pConfig.put(LBW + ".economy", econ.getName());
         pConfig.put(LBW + ".timestamp", System.currentTimeMillis());
-        pConfig.put("donated." + econ.getName(), getDonatedAmount(econ) + amount);
+        pConfig.put("donated." + econ.getName(), getDonatedAmount(econ) + amount0);
         save();
     }
 
@@ -408,7 +512,7 @@ public final class NovaPlayer {
         for (Map.Entry<String, Object> entry : pConfig.entrySet()) {
             if (!entry.getKey().startsWith("donated.")) continue;
 
-            Economy econ = Economy.getEconomy(entry.getKey().split("\\.")[1].toLowerCase());
+            Economy econ = Economy.byName(entry.getKey().split("\\.")[1].toLowerCase());
             if (econ == null) continue;
 
             amounts.put(econ, (double) entry.getValue());
@@ -479,7 +583,7 @@ public final class NovaPlayer {
         Map<OfflinePlayer, Bounty> bounties = new HashMap<>();
 
         for (Map.Entry<String, Object> entry : pConfig.entrySet()) {
-            if (!entry.getKey().startsWith("bounty.")) continue;
+            if (!entry.getKey().startsWith("bounties.")) continue;
 
             OfflinePlayer target = Bukkit.getOfflinePlayer(UUID.fromString(entry.getKey().split("\\.")[1]));
             if (target == null) continue;
@@ -768,5 +872,109 @@ public final class NovaPlayer {
                 .filter(r -> r.getPurchased() == m)
                 .collect(Collectors.toList())
         );
+    }
+
+    /**
+     * <p>Checks if this player has a specific corporation permission.</p>
+     * <p>This will return {@code false} if the player does not own a corporation, business, or if the permission is null.</p>
+     * @param permission
+     * @return true if this player has the corporation permission, else false
+     */
+    public boolean hasPermission(@Nullable CorporationPermission permission) {
+        if (permission == null) return false;
+
+        Business b = Business.byOwner(p);
+        if (b == null) return false;
+
+        Corporation c = Corporation.byMember(p);
+        if (c == null) return false;
+
+        return c.hasPermission(b, permission);
+    }
+
+    /**
+     * <p>Fetches an immutable copy of all of the Auctions this player has won.</p>
+     * <p>Expired Auctions are no longer stored in the Auction House. Use {@link #getWonAuction(UUID)} for retrieval by ID.</p>
+     * @return All Won Auctions
+     */
+    @NotNull
+    public Set<AuctionProduct> getWonAuctions() {
+        return ImmutableSet.copyOf(wonAuctions);
+    }
+
+    /**
+     * Adds an Auction to this player's won auctions.
+     * @param product Auction to add
+     */
+    public void addWonAuction(@NotNull AuctionProduct product) {
+        if (product == null) throw new IllegalArgumentException("Auction cannot be null");
+        wonAuctions.add(product);
+        save();
+    }
+
+    /**
+     * Awards an auction to this player, adding it to their inventory. The player must be online.
+     * @param product Auction from {@link #getWonAuctions()} to Award
+     */
+    public void awardAuction(@NotNull AuctionProduct product) {
+        if (product == null) throw new IllegalArgumentException("Auction cannot be null");
+        if (!p.isOnline()) throw new IllegalStateException("Player is not online");
+
+        Player player = p.getPlayer();
+        if (player.getInventory().firstEmpty() == -1) {
+            player.getWorld().dropItemNaturally(player.getLocation(), product.getItem());
+        } else {
+            player.getInventory().addItem(product.getItem());
+        }
+
+        if (wonAuctions.contains(product)) {
+            wonAuctions.remove(product);
+            save();
+        }
+    }
+
+    /**
+     * Gets a won auction by its ID.
+     * @param id ID of the Auction
+     * @return Auction, or null if not found
+     */
+    @Nullable
+    public AuctionProduct getWonAuction(@NotNull UUID id) {
+        return wonAuctions.stream().filter(a -> a.getUUID().equals(id)).findFirst().orElse(null);
+    }
+
+    /**
+     * Fetches whether this player can bypass the max negative balance. This will return {@code false} if {@link NovaConfig#isNegativeBalancesEnabled()} return false.
+     * @return true if this player can bypass, else false
+     */
+    public boolean canBypassMaxNegativeBalance() {
+        if (!NovaConfig.getConfiguration().isNegativeBalancesEnabled()) return false;
+
+        return NovaConfig.getConfiguration().canBypassMaxNegativeAmount(p);
+    }
+
+    /**
+     * Gets the language of this player.
+     * @return Language of this player
+     */
+    @NotNull
+    public Language getLanguage() {
+        return Language.getById((String) pConfig.getOrDefault("language", Language.getCurrentLanguage().getIdentifier()));
+    }
+
+    /**
+     * Sets the language of this player.
+     * @param lang Language to set
+     * @throws IllegalArgumentException if language is null
+     */
+    public void setLanguage(@NotNull Language lang) throws IllegalArgumentException {
+        if (lang == null) throw new IllegalArgumentException("Language cannot be null");
+        pConfig.put("language", lang.getIdentifier());
+        save();
+    }
+
+    private void checkStats() {
+        if (stats == null)
+            stats = new PlayerStatistics(p);
     }
 }

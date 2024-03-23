@@ -1,6 +1,5 @@
 package us.teaminceptus.novaconomy.api.economy.market;
 
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import org.bukkit.Material;
@@ -95,6 +94,14 @@ public interface NovaMarket {
      * @throws IllegalArgumentException if stock is negative
      */
     void setStock(@NotNull Material m, long stock) throws IllegalArgumentException;
+
+    /**
+     * Sets the amount of stock for Materials on the Market.
+     * @param materials Materials to set
+     * @param stock Stock to set
+     * @throws IllegalArgumentException if stock is negative
+     */
+    void setStock(@NotNull Iterable<Material> materials, long stock) throws IllegalArgumentException;
 
     /**
      * Adds stock to a Material on the Market.
@@ -391,4 +398,31 @@ public interface NovaMarket {
      * @param material Material to remove
      */
     void removeCustomItem(@NotNull Material material);
+
+    /**
+     * Fetches an immutable set of all economies allowed to be used when buying from the Novaconomy Market.
+     * @return Set of Economies
+     */
+    @NotNull
+    Set<Economy> getWhitelistedEconomies();
+
+    /**
+     * Sets the economies allowed to be used when buying from the Novaconomy Market.
+     * @param economies Iterable of Economies
+     */
+    void setWhitelistedEconomies(@NotNull Iterable<Economy> economies);
+
+    /**
+     * Sets the economies disallowed to be used when buying from the Novaconomy Market.
+     * @return Set of Economies
+     */
+    @NotNull
+    Set<Economy> getBlacklistedEconomies();
+
+    /**
+     * Sets the economies disallowed to be used when buying from the Novaconomy Market.
+     * @param economies Iterable of Economies
+     */
+    void setBlacklistedEconomies(@NotNull Iterable<Economy> economies);
+
 }

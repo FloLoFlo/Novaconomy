@@ -1,6 +1,7 @@
 package us.teaminceptus.novaconomy.api.business;
 
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableMap;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.configuration.serialization.ConfigurationSerializable;
@@ -8,7 +9,6 @@ import org.bukkit.inventory.ItemStack;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import us.teaminceptus.novaconomy.api.economy.Economy;
-import us.teaminceptus.novaconomy.api.util.BusinessProduct;
 import us.teaminceptus.novaconomy.api.util.Price;
 import us.teaminceptus.novaconomy.api.util.Product;
 
@@ -178,15 +178,16 @@ public final class BusinessStatistics implements ConfigurationSerializable {
 
         @Override
         public Map<String, Object> serialize() {
-            return new HashMap<String, Object>() {{
-                put("buyer", buyer.toString());
-                put("timestamp", timestamp);
+            ImmutableMap.Builder<String, Object> builder = ImmutableMap.<String, Object>builder()
+                    .put("buyer", buyer.toString())
+                    .put("timestamp", timestamp);
 
-                if (product != null) put("item", product.getItem());
-                if (product != null && product.getEconomy() != null) put("economy", product.getEconomy().getUniqueId().toString());
-                if (product != null) put("amount", product.getAmount());
-                if (business != null) put("business", business.toString());
-            }};
+            if (product != null) builder.put("item", product.getItem());
+            if (product != null && product.getEconomy() != null) builder.put("economy", product.getEconomy().getUniqueId().toString());
+            if (product != null) builder.put("amount", product.getAmount());
+            if (business != null) builder.put("business", business.toString());
+
+            return builder.build();
         }
 
         /**
@@ -211,7 +212,7 @@ public final class BusinessStatistics implements ConfigurationSerializable {
                     new Product(
                             (ItemStack) serial.get("item"),
                             new Price(
-                                    serial.containsKey("economy") ? Economy.getEconomy(UUID.fromString((String) serial.get("economy"))) : null,
+                                    serial.containsKey("economy") ? Economy.byId(UUID.fromString((String) serial.get("economy"))) : null,
                                     (double) serial.get("amount")
                             )
                     ), num
@@ -351,15 +352,15 @@ public final class BusinessStatistics implements ConfigurationSerializable {
 
     @Override
     public Map<String, Object> serialize() {
-        return new HashMap<String, Object>() {{
-            put("business_id", businessId.toString());
-            put("total_sales", totalSales);
-            put("total_resources", totalResources);
-            put("product_sales", productSales);
-            put("views", views);
+        ImmutableMap.Builder<String, Object> builder = ImmutableMap.<String, Object>builder()
+                .put("business_id", businessId.toString())
+                .put("total_sales", totalSales)
+                .put("total_resources", totalResources)
+                .put("product_sales", productSales)
+                .put("views", views);
 
-            if (lastTransaction != null) put("last_transaction", lastTransaction);
-        }};
+        if (lastTransaction != null) builder.put("last_transaction", lastTransaction);
+        return builder.build();
     }
 
     /**

@@ -1,9 +1,11 @@
 name: Novaconomy
-version: 1.8.0
+version: 1.9.2
 description: ${project.description}
 author: Team Inceptus
+load: POSTWORLD
 website: "https://github.com/Team-Inceptus/Novaconomy"
 api-version: 1.13
+folia-supported: true
 main: us.teaminceptus.novaconomy.Novaconomy
 softdepend: [ PlaceholderAPI, Vault, Treasury, PlugMan, PlugManX ]
 permissions:
@@ -170,6 +172,16 @@ permissions:
     default: true
     children:
       novaconomy.user: true
+  novaconomy.user.auction_house:
+    description: Access to view and use the auction house
+    default: true
+    children:
+      novaconomy.user: true
+  novaconomy.user.language:
+    description: Access to change one's own language
+    default: true
+    children:
+      novaconomy.user: true
 
   # User Bounty
   novaconomy.user.bounty:
@@ -262,6 +274,12 @@ permissions:
   
   novaconomy.user.corporation.manage:
     description: Access to Creating and Managing one's own Corporation
+    default: true
+    children:
+      novaconomy.user.corporation: true
+
+  novaconomy.user.corporation.query:
+    description: Access to Querying about other Corporations
     default: true
     children:
       novaconomy.user.corporation: true
